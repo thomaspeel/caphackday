@@ -1,9 +1,27 @@
 import lasagne
+import logging
 import numpy as np
 import theano
 import theano.tensor as T
 import time
 
+from hackday_io import generate_dataset, load_data
+
+logger = logging.getLogger()
+
+# Project data using the network.
+def project(X, input_var, network):
+    """
+    Project X using the network
+    :type X: np.ndarray
+    :param network:
+    :return:
+    """
+
+    X_proj = lasagne.layers.get_output(network, deterministic=True)
+    proj_fn = theano.function([input_var], X_proj)
+
+    return proj_fn(X)
 
 # Loss function.
 def loss_fn(network_output, size):
@@ -20,19 +38,22 @@ def loss_fn(network_output, size):
     return (dist_p ** 2).mean()
 
 
-def generate_dataset(n):
-    raise NotImplementedError
-
-
-def generate_minibatches(dataset, batchsize=128):
+def generate_minibatches(dataset, subset='train', batchsize=128):
+    total = len(dataset)
+    if subset == 'train':
+        start, stop = 0, int(.95 * total)
+    else:
+        start, stop = int(.95 * total), total
     d = dataset[0][0].size
-    for i in range(0, len(dataset), batchsize):
-        X = np.empty(3*batchsize, d)
+    X = np.empty((3 * batchsize, d))
+    for i in range(start, stop, batchsize):
+        offset = 0
         for x in dataset[i:i+batchsize]:
-            X[i, :] = x[0]
-            X[2*batchsize+i, :] = x[1]
-            X[3*batchsize+i, :] = x[2]
-    yield X
+            X[offset, :] = x[0]
+            X[1*batchsize+offset, :] = x[1]
+            X[2*batchsize+offset, :] = x[2]
+            offset += 1
+        yield X
 
 
 def build_mlp(input_var=None, input_size=4096):
@@ -59,8 +80,9 @@ def learn(dataset, model='mlp', num_epochs=10, batchsize=128):
 
     # Create neural network model (depending on first command line parameter)
     print("Building model and compiling functions...")
+    d = dataset[0][0].size
     if model == 'mlp':
-        network = build_mlp(input_var)
+        network = build_mlp(input_var, input_size=d)
     else:
         print("Unrecognized model type %r." % model)
     prediction = lasagne.layers.get_output(network)
@@ -72,9 +94,8 @@ def learn(dataset, model='mlp', num_epochs=10, batchsize=128):
     # parameters at each training step. Here, we'll use Stochastic Gradient
     # Descent (SGD) with Nesterov momentum, but Lasagne offers plenty more.
     params = lasagne.layers.get_all_params(network, trainable=True)
-    # updates = lasagne.updates.nesterov_momentum(
-    #         train_loss, params, learning_rate=0.5, momentum=0.9)
-    updates = lasagne.updates.adam(train_loss, params)
+    updates = lasagne.updates.nesterov_momentum(train_loss, params, learning_rate=0.5, momentum=0.9)
+    # updates = lasagne.updates.adam(train_loss, params)
 
     # Create a loss expression for validation/testing. The crucial difference
     # here is that we do a deterministic forward pass through the network,
@@ -102,17 +123,17 @@ def learn(dataset, model='mlp', num_epochs=10, batchsize=128):
         train_err = 0
         train_batches = 0
         start_time = time.time()
-        for batch in generate_minibatches(dataset, batchsize, 'train'):
+        for batch in generate_minibatches(dataset, 'train', batchsize):
             if batch is not None:
-                train_err += train_fn(batch.todense())
+                train_err += train_fn(batch)
                 train_batches += 1
 
         # And a full pass over the validation data:
         val_err = 0
         val_batches = 0
-        for batch in generate_minibatches(dataset, batchsize, 'val'):
+        for batch in generate_minibatches(dataset, 'val', batchsize):
             if batch is not None:
-                val_err += val_fn(batch.todense())
+                val_err += val_fn(batch)
                 val_batches += 1
 
         # Then we print the results for this epoch:
@@ -138,17 +159,10 @@ def learn(dataset, model='mlp', num_epochs=10, batchsize=128):
     # print("  test accuracy:\t\t{:.2f} %".format(
     #     test_acc / test_batches * 100))
 
+    X_test, _ = load_data(logger)
+
     # Optionally, you could now dump the network weights to a file like this:
-    # np.savez('model.npz', weights=lasagne.layers.get_all_param_values(network))
-    # np.savez('projections.npz', test=project(X_test, input_var, network))
-
-
-def main():
-    dataset = generate_dataset(n=10000)
-    learn(dataset, batchsize=256, num_epochs=32)
-
-
-if __name__ == '__main__':
-    main()
+    np.savez('model.npz', weights=lasagne.layers.get_all_param_values(network))
+    np.savez('projections.npz', test=project(X_test, input_var, network))
 
 
