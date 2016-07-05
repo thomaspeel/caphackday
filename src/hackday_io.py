@@ -34,6 +34,7 @@ def get_frames(list_scenes, num_eps=1):
     :param num_eps: an integer
     :return: The list of dicts: [{"episode": int, "scene": int, "vec": np.array}]
     """
+    global src_folder
     # FOr the moment this method only works for num_eps == 1
     if num_eps != 1:
         raise NotImplementedError("The method get_frames has only been implemented for episode 1")
@@ -115,6 +116,7 @@ def load_data(logger):
     """
     Obsolete
     """
+    global src_folder
     list_images_name = []
     dict_eps_scenes_timestamps = {}
     name_eps = []
